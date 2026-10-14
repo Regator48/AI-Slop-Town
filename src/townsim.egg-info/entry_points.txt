@@ -1,0 +1,2 @@
+[console_scripts]
+townsim = townsim.cli:main

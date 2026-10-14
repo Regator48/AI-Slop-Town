@@ -125,6 +125,13 @@ class SimulationTests(unittest.TestCase):
         self.assertGreater(max(m["market_fear"] for m in terror.state.daily_metrics), 0.5)
         self.assertLess(min(m["consumer_confidence"] for m in terror.state.daily_metrics), 0.9)
 
+    def test_terror_shock_deterministic(self):
+        a = Simulation(Config(seed=13, scenario="terror_shock"))
+        b = Simulation(Config(seed=13, scenario="terror_shock"))
+        a.run(45)
+        b.run(45)
+        self.assertEqual(a.state.metrics, b.state.metrics)
+
     def test_serialization_round_trip(self):
         sim = Simulation(Config(seed=5, scenario="energy_shock", event_schedule={5: ["gold_risk_spike"]}))
         sim.run(45)

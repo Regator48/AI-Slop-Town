@@ -1,0 +1,11 @@
+[project]
+name = "townsim"
+version = "0.1.0"
+description = "Deterministic town macroeconomy and banking simulation"
+requires-python = ">=3.10"
+
+[project.scripts]
+townsim = "townsim.cli:main"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]

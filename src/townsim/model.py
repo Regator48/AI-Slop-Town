@@ -137,6 +137,8 @@ class State:
     defaults: float = 0.0
     bank_failures: int = 0
     quality_of_life: float = 1.0
+    consumer_confidence: float = 1.0
+    market_fear: float = 0.0
     shortage_index: float = 0.0
     consumption: float = 0.0
     credit_growth: float = 0.0
@@ -159,6 +161,7 @@ SCENARIO_EVENT_SCHEDULES = {
     "market_crash": {30: ["equity_crash"], 31: ["equity_crash"]},
     "sovereign_fiscal_shock": {90: ["fiscal_shock"], 180: ["fiscal_shock"]},
     "gold_shock": {50: ["gold_risk_spike"], 140: ["gold_risk_spike"]},
+    "terror_shock": {15: ["terror_attack_shock"], 16: ["panic_selloff"]},
 }
 
 
@@ -298,6 +301,9 @@ class Simulation:
             s.stocks = 80.0
         if scenario == "gold_shock":
             s.gold = 2300.0
+        if scenario == "terror_shock":
+            s.consumer_confidence = 0.95
+            s.market_fear = 0.08
         self.state.loans = sum(self.loans.principal)
 
     def _apply_event(self, event_name: str) -> None:
@@ -341,6 +347,16 @@ class Simulation:
             self.treasury.tax_rate = max(0.15, self.treasury.tax_rate - 0.005)
         elif event_name == "gold_risk_spike":
             s.gold *= 1.03
+        elif event_name == "terror_attack_shock":
+            s.market_fear = min(1.0, s.market_fear + 0.65)
+            s.consumer_confidence = max(0.45, s.consumer_confidence * 0.82)
+            s.unemployment = min(0.30, s.unemployment + 0.006)
+            s.stocks *= 0.88
+            s.gold *= 1.02
+        elif event_name == "panic_selloff":
+            s.market_fear = min(1.0, s.market_fear + 0.20)
+            s.stocks *= 0.95
+            self._apply_household_deposit_outflow(0.005)
 
     def _apply_household_deposit_outflow(self, outflow_share: float) -> None:
         for idx, dep in enumerate(self.households.deposits):
@@ -365,6 +381,9 @@ class Simulation:
         self.central_bank.discount_window_rate = s.policy_rate + 0.012
         self.treasury.bill_rate = max(0.0, s.policy_rate - 0.002)
         self.treasury.bond_rate = max(self.treasury.bill_rate + 0.004, s.policy_rate + 0.004)
+        if s.market_fear > 0.0:
+            # Flight-to-safety channel: short safe yields compress in high fear regimes.
+            self.treasury.bill_rate = max(0.0, self.treasury.bill_rate - 0.003 * s.market_fear)
 
     def _labor_and_production(self) -> tuple[float, float]:
         s, f, r = self.state, self.firms, self.rng
@@ -435,11 +454,13 @@ class Simulation:
         unmet = 0.0
         for idx in range(self.config.people):
             resources = h.cash[idx] + h.deposits[idx] * 0.02 + h.income[idx] + h.welfare[idx]
-            spend_budget = max(4.0, resources * 0.32)
+            spend_budget = max(4.0, resources * (0.32 * s.consumer_confidence))
             spending = 0.0
             for need in DAILY_NEEDS:
                 base = h.expenses[need][idx] * need_weights[need]
                 adjusted = base * s.prices * (1.0 + 0.2 * s.shortage_index)
+                if need in {"retail", "professional_services", "transport"}:
+                    adjusted *= max(0.45, 1.0 - 0.7 * s.market_fear)
                 item_spend = min(max(0.1, adjusted), max(0.0, spend_budget - spending))
                 spending += item_spend
             if spending < spend_budget * 0.7:
@@ -482,7 +503,7 @@ class Simulation:
     def _banking_and_loans(self) -> tuple[float, float, float, float]:
         s, r = self.state, self.rng
         deposit_rate = max(0.0, self.central_bank.reserve_remuneration - 0.003)
-        base_loan_rate = max(0.01, s.policy_rate + 0.025)
+        base_loan_rate = max(0.01, s.policy_rate + 0.025 + 0.03 * s.market_fear)
 
         new_defaults = 0.0
         recoveries = 0.0
@@ -600,20 +621,22 @@ class Simulation:
         firm_earnings = sum(max(0.0, rev - cost) for rev, cost in zip(self.firms.revenue, self.firms.costs))
         expected_cash_flow = firm_earnings / max(1, self.config.firms)
         risk_free = self.treasury.bill_rate
-        equity_risk_premium = 0.04 + 0.3 * s.unemployment + 0.5 * s.shortage_index
+        equity_risk_premium = 0.04 + 0.3 * s.unemployment + 0.5 * s.shortage_index + 0.35 * s.market_fear
         discount = max(0.01, risk_free + equity_risk_premium)
         fair_index = max(20.0, expected_cash_flow / discount)
-        s.stocks = max(10.0, 0.96 * s.stocks + 0.04 * fair_index)
+        s.stocks = max(10.0, (0.96 * s.stocks + 0.04 * fair_index) * (1.0 - 0.03 * s.market_fear))
 
         real_rate = s.policy_rate - inflation_estimate
         bank_stress = sum(1 for b in self.banks if b.failed) / max(1, len(self.banks))
         currency_stress = max(0.0, s.deficit / max(1.0, s.government_debt))
-        gold_demand = 0.5 * bank_stress + 0.7 * currency_stress + 0.4 * max(0.0, inflation_estimate - 0.02)
+        gold_demand = 0.5 * bank_stress + 0.7 * currency_stress + 0.4 * max(0.0, inflation_estimate - 0.02) + 0.8 * s.market_fear
         s.gold *= math.exp(-0.08 * real_rate + 0.18 * gold_demand + self.rng.gauss(0.0, 0.0015))
 
     def step(self) -> State:
         s = self.state
         s.day += 1
+        s.market_fear = max(0.0, s.market_fear * 0.965)
+        s.consumer_confidence = min(1.0, s.consumer_confidence + (1.0 - s.consumer_confidence) * 0.02)
 
         for event in self.event_schedule.get(s.day, []):
             self._apply_event(event)
@@ -636,7 +659,14 @@ class Simulation:
         s.cash = sum(self.households.cash)
 
         self._asset_prices(inflation_estimate)
-        s.quality_of_life = max(0.0, 1 - 0.7 * s.unemployment - 0.2 * max(0.0, s.prices - 1) - 0.2 * s.shortage_index)
+        s.quality_of_life = max(
+            0.0,
+            1
+            - 0.7 * s.unemployment
+            - 0.2 * max(0.0, s.prices - 1)
+            - 0.2 * s.shortage_index
+            - 0.1 * s.market_fear,
+        )
 
         self.record_daily_metrics(inflation_estimate, loan_rate, deposit_rate, defaults, recoveries, payroll, unmet_needs)
         if s.day % 30 == 0:
@@ -692,6 +722,8 @@ class Simulation:
                 "government_debt": s.government_debt,
                 "deficit": s.deficit,
                 "shortage_index": s.shortage_index,
+                "consumer_confidence": s.consumer_confidence,
+                "market_fear": s.market_fear,
                 "avg_firm_price": avg_firm_price,
                 "payroll": payroll,
                 "unmet_needs": unmet_needs,

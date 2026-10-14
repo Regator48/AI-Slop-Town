@@ -32,9 +32,10 @@ python -m townsim.cli --load run.json --days 30 --output resumed.json
 
 ## Scenarios
 
-`baseline`, `inflation`, `recession`, `bank_run`, `deposit_flight`, `credit_crunch`, `housing_decline`, `housing_crisis`, `energy_shock`, `supply_disruption`, `pandemic`, `market_crash`, `sovereign_fiscal_shock`, `gold_shock`
+`baseline`, `inflation`, `recession`, `bank_run`, `deposit_flight`, `credit_crunch`, `housing_decline`, `housing_crisis`, `energy_shock`, `supply_disruption`, `pandemic`, `market_crash`, `sovereign_fiscal_shock`, `gold_shock`, `terror_shock`
 
 Scenario schedules are deterministic by seed and can be extended with `--event DAY:EVENT`.
+The `terror_shock` schedule models panic/uncertainty behavior (confidence drop, risk-premium widening, and stock sell-off with flight-to-safety pressure).
 
 ## Persistence and metrics
 

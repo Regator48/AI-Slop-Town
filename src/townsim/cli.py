@@ -35,6 +35,7 @@ def main() -> None:
             "market_crash",
             "sovereign_fiscal_shock",
             "gold_shock",
+            "terror_shock",
         ],
     )
     parser.add_argument("--event", action="append", default=[], help="Extra scheduled event in DAY:EVENT format")

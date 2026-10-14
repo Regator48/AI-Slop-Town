@@ -115,6 +115,16 @@ class SimulationTests(unittest.TestCase):
         self.assertLess(crash.state.stocks, baseline.state.stocks)
         self.assertGreater(gold.state.gold, baseline.state.gold)
 
+    def test_terror_shock_panic_risk_off_direction(self):
+        baseline = Simulation(Config(seed=13, scenario="baseline"))
+        terror = Simulation(Config(seed=13, scenario="terror_shock"))
+        baseline.run(35)
+        terror.run(35)
+        self.assertLess(terror.state.stocks, baseline.state.stocks)
+        self.assertGreater(terror.state.gold, baseline.state.gold)
+        self.assertGreater(max(m["market_fear"] for m in terror.state.daily_metrics), 0.5)
+        self.assertLess(min(m["consumer_confidence"] for m in terror.state.daily_metrics), 0.9)
+
     def test_serialization_round_trip(self):
         sim = Simulation(Config(seed=5, scenario="energy_shock", event_schedule={5: ["gold_risk_spike"]}))
         sim.run(45)

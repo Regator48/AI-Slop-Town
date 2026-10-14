@@ -11,7 +11,7 @@ python -m townsim.cli --days 365 --seed 7 --scenario baseline --output out.json 
 python -m unittest discover -s tests -v
 ```
 
-The repository includes `sitecustomize.py` so `python -m townsim.cli` and tests work from a fresh checkout without extra environment variables.
+The repository includes a top-level `townsim` package bridge so `python -m townsim.cli` and tests work from a fresh checkout without extra environment variables.
 
 ## CLI examples
 
